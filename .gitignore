@@ -1,0 +1,44 @@
+# Target / Build directories
+target/
+work/
+bin/
+
+# IntelliJ IDEA settings
+.idea/
+*.iml
+*.iws
+
+# Eclipse settings
+.settings/
+.project
+.classpath
+.factorypath
+
+# NetBeans settings
+nbproject/
+private/
+build/
+nbbuild/
+dist/
+nb-configuration.xml
+
+# Local system files
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+*.swp
+
+# Log files
+*.log
+logs/
+
+# Uploaded attachments and media directories
+uploads/
+/uploads/
+
+# Local database files
+*.db
+
+# Spring Boot Configuration backups / overrides
+application-local.properties
