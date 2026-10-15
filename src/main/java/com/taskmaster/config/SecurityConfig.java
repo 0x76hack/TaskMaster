@@ -61,17 +61,14 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/**").permitAll()
-                .requestMatchers("/h2-console/**").permitAll()
                 .requestMatchers("/ws/**").permitAll()
                 .anyRequest().authenticated()
             );
 
-        // Required to allow H2 Console frames
-        http.headers(headers -> headers.frameOptions(frame -> frame.disable()));
-
+        // H2 console is deliberately not exposed by the application security chain.
+        http.headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()));
         http.authenticationProvider(authenticationProvider());
         http.addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
-
         return http.build();
     }
 }

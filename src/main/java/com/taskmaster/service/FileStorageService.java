@@ -25,49 +25,59 @@ public class FileStorageService implements StorageService {
         this.fileStorageLocation = Paths.get(uploadDir).toAbsolutePath().normalize();
         try {
             Files.createDirectories(this.fileStorageLocation);
-        } catch (Exception ex) {
-            throw new BadRequestException("Could not create the directory where the uploaded files will be stored.", ex);
+        } catch (IOException ex) {
+            throw new IllegalStateException("Could not initialize upload directory", ex);
         }
     }
 
+    @Override
     public String storeFile(MultipartFile file) {
-        if (file.isEmpty()) {
-            throw new BadRequestException("Cannot upload empty file.");
+        if (file == null || file.isEmpty()) {
+            throw new BadRequestException("Cannot upload an empty file.");
         }
-        String originalFileName = StringUtils.cleanPath(Objects.requireNonNull(file.getOriginalFilename()));
+        String originalFileName = StringUtils.cleanPath(Objects.toString(file.getOriginalFilename(), ""));
+        if (originalFileName.isBlank() || originalFileName.contains("..")
+                || originalFileName.indexOf('/') >= 0 || originalFileName.indexOf('\\') >= 0) {
+            throw new BadRequestException("Invalid filename.");
+        }
         try {
-            if (originalFileName.contains("..")) {
-                throw new BadRequestException("Filename contains invalid path sequence " + originalFileName);
-            }
-
-            // Generate a unique file name to avoid collisions
-            String fileExtension = "";
+            String extension = "";
             int extensionIndex = originalFileName.lastIndexOf('.');
-            if (extensionIndex > 0) {
-                fileExtension = originalFileName.substring(extensionIndex);
+            if (extensionIndex > 0 && extensionIndex < originalFileName.length() - 1) {
+                String candidate = originalFileName.substring(extensionIndex);
+                if (candidate.length() <= 16 && candidate.matches("\\.[A-Za-z0-9]+")) {
+                    extension = candidate.toLowerCase();
+                }
             }
-            String fileName = UUID.randomUUID().toString() + fileExtension;
-
-            Path targetLocation = this.fileStorageLocation.resolve(fileName);
-            Files.copy(file.getInputStream(), targetLocation, StandardCopyOption.REPLACE_EXISTING);
-
+            String fileName = UUID.randomUUID() + extension;
+            Path target = fileStorageLocation.resolve(fileName).normalize();
+            if (!target.getParent().equals(fileStorageLocation)) {
+                throw new BadRequestException("Invalid upload path.");
+            }
+            Files.copy(file.getInputStream(), target, StandardCopyOption.CREATE_NEW);
             return fileName;
         } catch (IOException ex) {
-            throw new BadRequestException("Could not store file " + originalFileName + ". Please try again!", ex);
+            throw new BadRequestException("Could not store uploaded file. Please try again.", ex);
         }
     }
 
+    @Override
     public Resource loadFileAsResource(String fileName) {
+        if (fileName == null || fileName.isBlank() || !fileName.matches("[A-Za-z0-9-]+(?:\\.[A-Za-z0-9]+)?")) {
+            throw new BadRequestException("Invalid file identifier.");
+        }
         try {
-            Path filePath = this.fileStorageLocation.resolve(fileName).normalize();
-            Resource resource = new UrlResource(filePath.toUri());
-            if (resource.exists()) {
-                return resource;
-            } else {
-                throw new BadRequestException("File not found " + fileName);
+            Path filePath = fileStorageLocation.resolve(fileName).normalize();
+            if (!filePath.startsWith(fileStorageLocation)) {
+                throw new BadRequestException("Invalid file path.");
             }
+            Resource resource = new UrlResource(filePath.toUri());
+            if (resource.exists() && resource.isReadable() && Files.isRegularFile(filePath)) {
+                return resource;
+            }
+            throw new BadRequestException("File not found.");
         } catch (MalformedURLException ex) {
-            throw new BadRequestException("File not found " + fileName, ex);
+            throw new BadRequestException("File not found.", ex);
         }
     }
 }

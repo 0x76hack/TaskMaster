@@ -15,29 +15,33 @@ import java.util.Date;
 public class JwtTokenProvider {
 
     private static final Logger logger = LoggerFactory.getLogger(JwtTokenProvider.class);
-
     private final SecretKey key;
     private final int jwtExpirationInMs;
 
     public JwtTokenProvider(@Value("${app.jwt.secret}") String jwtSecret,
                             @Value("${app.jwt.expiration-ms}") int jwtExpirationInMs) {
-        SecretKey secretKey;
+        if (jwtSecret == null || jwtSecret.isBlank()) {
+            throw new IllegalStateException("APP_JWT_SECRET must be configured with a Base64-encoded key of at least 64 bytes");
+        }
+        if (jwtExpirationInMs <= 0) {
+            throw new IllegalStateException("app.jwt.expiration-ms must be positive");
+        }
         try {
             byte[] keyBytes = Decoders.BASE64.decode(jwtSecret);
-            secretKey = Keys.hmacShaKeyFor(keyBytes);
-        } catch (Exception e) {
-            secretKey = Keys.hmacShaKeyFor(jwtSecret.getBytes());
+            if (keyBytes.length < 64) {
+                throw new IllegalStateException("APP_JWT_SECRET must decode to at least 64 bytes for HS512");
+            }
+            this.key = Keys.hmacShaKeyFor(keyBytes);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("APP_JWT_SECRET must be a valid Base64-encoded key of at least 64 bytes", e);
         }
-        this.key = secretKey;
         this.jwtExpirationInMs = jwtExpirationInMs;
     }
 
     public String generateToken(Authentication authentication) {
         UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
-
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + jwtExpirationInMs);
-
         return Jwts.builder()
                 .subject(Long.toString(userPrincipal.getId()))
                 .issuedAt(now)
@@ -47,12 +51,7 @@ public class JwtTokenProvider {
     }
 
     public Long getUserIdFromJWT(String token) {
-        Claims claims = Jwts.parser()
-                .verifyWith(key)
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
-
+        Claims claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
         return Long.parseLong(claims.getSubject());
     }
 
@@ -60,15 +59,9 @@ public class JwtTokenProvider {
         try {
             Jwts.parser().verifyWith(key).build().parseSignedClaims(authToken);
             return true;
-        } catch (MalformedJwtException ex) {
-            logger.error("Invalid JWT token");
-        } catch (ExpiredJwtException ex) {
-            logger.error("Expired JWT token");
-        } catch (UnsupportedJwtException ex) {
-            logger.error("Unsupported JWT token");
-        } catch (IllegalArgumentException ex) {
-            logger.error("JWT claims string is empty.");
+        } catch (JwtException | IllegalArgumentException ex) {
+            logger.debug("JWT validation failed: {}", ex.getClass().getSimpleName());
+            return false;
         }
-        return false;
     }
 }
